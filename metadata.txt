@@ -1,4 +1,4 @@
-rt[general]
+[general]
 name=Visible Layers
 icon=icons/icon.png
 description=Quickly filter and display only the visible layers in your project.
