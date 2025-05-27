@@ -3,6 +3,7 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout, QWidget, QPushButton, QToolButton, QToolBar
 )
 from qgis.PyQt.QtGui import QIcon
+from PyQt5.QtCore import QSize 
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject
 from qgis.utils import iface
@@ -57,15 +58,29 @@ class VisibleLayers:
         self.dock = QDockWidget("Visible Layers", self.iface.mainWindow())
         main_widget = QWidget()
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        toolbar = QToolBar()
+        toolbar.setIconSize(QSize(16, 16))
+        toolbar.setStyleSheet("QToolBar { border: none; }")
+        refresh_action = QAction(
+            QIcon(":/images/themes/default/mActionRefresh.svg"),
+            "Refresh visible layers",
+            self.iface.mainWindow()
+        )
+        refresh_action.triggered.connect(self.update_visible_layers)
+        toolbar.addAction(refresh_action)
+
         self.list_widget = QListWidget()
         self.list_widget.itemClicked.connect(self.select_layer_in_panel)
         self.list_widget.itemChanged.connect(self.toggle_layer_visibility)
         self.list_widget.itemDoubleClicked.connect(self.open_layer_properties)
-        refresh_button = QPushButton("Refresh")
-        refresh_button.clicked.connect(self.update_visible_layers)
+
+        layout.addWidget(toolbar)
         layout.addWidget(self.list_widget)
-        layout.addWidget(refresh_button)
         main_widget.setLayout(layout)
+
         self.dock.setWidget(main_widget)
         self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self._update_dock_state)
