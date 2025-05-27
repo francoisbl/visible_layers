@@ -36,7 +36,7 @@ It enhances readability and efficiency when working with complex projects by all
    ```
 3. Restart QGIS and enable the plugin via Plugins > Manage and Install Plugins
 
-## Plugin metadata
+## Plugin info
 
 Compatible with QGIS 3.0+, licensed under GPL v2.  
 
