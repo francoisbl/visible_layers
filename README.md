@@ -22,6 +22,10 @@ It enhances readability and efficiency when working with complex projects by all
 - Share a screenshot or perform visual analysis with only relevant layers visible
 - Stay focused when toggling themes, temporal layers, or mapsheets
 
+## Screenshot
+
+![Plugin preview](docs/visible_layers_screenshot.png)
+Only the checked layers are listed in the "Visible Layers" panel for quick access and editing.
 
 ## Installation
 
