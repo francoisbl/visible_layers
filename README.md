@@ -43,7 +43,7 @@ It enhances readability and efficiency when working with complex projects by all
 - Author: François Blanchard
 - License: GNU GPL v2
 - Minimum QGIS version: 3.0
-- Repository: https://github.com/[francoisbl]/visible_layers
+- Repository: https://github.com/francoisbl/visible_layers
 
 ## Feedback & contributions
 
