@@ -1,4 +1,4 @@
-<h1><img src="icons/glasses-on.svg" alt="Logo" width="24" style="vertical-align:middle;"/> Visible Layers</h1>
+<h1><img src="icons/glasses_on.svg" alt="Logo" width="24" style="vertical-align:middle;"/> Visible Layers</h1>
 
 Visible Layers is a lightweight plugin for QGIS that displays only the layers currently visible (toggled) in your project, inside a dedicated dock panel.
 
