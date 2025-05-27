@@ -2,8 +2,7 @@
 
 Visible Layers is a lightweight plugin for QGIS that displays only the layers currently visible (toggled) in your project, inside a dedicated dock panel.
 
-It enhances readability and efficiency when working with complex projects by allowing users to focus solely on the layers that matter. This plugin introduces a focused panel showing only what you’re actually seeing on the map, nothing more.
-
+It enhances readability and efficiency when working with complex projects by allowing users to focus solely on the layers that matter.
 ## Features
 
 - Show only visible layers (i.e., checked in the Layers Panel)
