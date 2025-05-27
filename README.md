@@ -1,0 +1,51 @@
+# Visible Layers
+
+Visible Layers is a lightweight plugin for QGIS that displays only the layers currently visible (toggled) in your project, inside a dedicated dock panel.
+
+It enhances readability and efficiency when working with complex projects by allowing users to focus solely on the layers that matter. This plugin introduces a focused panel showing only what you’re actually seeing on the map, nothing more.
+
+## Features
+
+- Show only visible layers (i.e., checked in the Layers Panel)
+- Toggle the panel using a toolbar button directly inside the Layers Panel
+- Auto-refresh when opening a new QGIS project
+- Refresh manually if needed using a "Refresh" button
+- Click a layer in the dock to select it in the Layers Panel
+- Double-click a layer to open its Layer Properties dialog
+- Synchronize visibility: checking/unchecking a layer in the dock updates the main panel
+- Preserves layer order and integrates without affecting your project structure
+- Uses SVG icons, native QGIS styling, and no external dependencies
+
+## Typical use cases
+
+- Quickly scan only the layers that are currently shown on the map
+- Declutter your interface when navigating complex projects with many utility/background layers
+- Share a screenshot or perform visual analysis with only relevant layers visible
+- Stay focused when toggling themes, temporal layers, or mapsheets
+
+
+## Installation
+
+1. Download or clone this repository  
+2. Place the folder in your QGIS plugin directory:
+   ```
+   ~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/
+   ```
+   Or on macOS:
+   ```
+   ~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/
+   ```
+3. Restart QGIS and enable the plugin via Plugins > Manage and Install Plugins
+
+## Plugin metadata
+
+- Name: Visible Layers
+- Author: François Blanchard
+- License: GNU GPL v2
+- Minimum QGIS version: 3.0
+- Repository: https://github.com/[francoisbl]/visible_layers
+
+## Feedback & contributions
+
+Feel free to open issues or suggest improvements via pull request.  
+If you found this useful, consider starring the repo or sharing it with the QGIS community.
