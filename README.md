@@ -38,11 +38,7 @@ It enhances readability and efficiency when working with complex projects by all
 
 ## Plugin metadata
 
-- Name: Visible Layers
-- Author: François Blanchard
-- License: GNU GPL v2
-- Minimum QGIS version: 3.0
-- Repository: https://github.com/francoisbl/visible_layers
+Compatible with QGIS 3.0+, licensed under GPL v2.  
 
 ## Feedback & contributions
 
