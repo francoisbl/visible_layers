@@ -1,0 +1,7 @@
+[general]
+name=Visible Layers
+description=Show only currently visible layers in a dedicated panel and lets you toggle them.
+version=1.0
+qgisMinimumVersion=3.0
+author=François Blanchard
+email=francois.fbl@gmail.com
