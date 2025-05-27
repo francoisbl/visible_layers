@@ -24,7 +24,7 @@ It enhances readability and efficiency when working with complex projects by all
 
 ## Screenshot
 
-<img src="docs/visible_layers_screenshot.png" alt="Screenshot" width="800"/>
+<img src="docs/visible_layers.png" alt="Screenshot" width="800"/>
 Only the checked layers are listed in the "Visible Layers" panel for quick access and editing.
 
 ## Installation
