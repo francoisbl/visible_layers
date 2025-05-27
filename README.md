@@ -40,9 +40,9 @@ Only the checked layers are listed in the "Visible Layers" panel for quick acces
    ```
 3. Restart QGIS and enable the plugin via Plugins > Manage and Install Plugins
 
-## Compatibility and license
+## Compatibility
 
-Compatible with QGIS 3.0+, licensed under GPL v2.  
+Compatible with QGIS 3.0+
 
 ## About
 
