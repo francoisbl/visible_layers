@@ -40,6 +40,10 @@ It enhances readability and efficiency when working with complex projects by all
 
 Compatible with QGIS 3.0+, licensed under GPL v2.  
 
+## About
+
+This tiny plugin was developed to support day-to-day GIS workflows with clarity and simplicity. Since I now use it in all my own projects, I thought it might be worth sharing.
+
 ## Feedback & contributions
 
 Feel free to open issues or suggest improvements via pull request.  
