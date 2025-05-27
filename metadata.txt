@@ -1,6 +1,6 @@
 [general]
 name=Visible Layers
-icon=icons/icon.png
+icon=icon.png
 description=Quickly filter and display only the visible layers in your project.
 about=This plugin adds a toggleable panel to display only the currently visible layers, offering easier access and layer navigation. Access it directly from the Layers panel.
 version=1.0
