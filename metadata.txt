@@ -7,6 +7,7 @@ version=1.0
 qgisMinimumVersion=3.0
 author=François Blanchard
 email=francois.fbl@gmail.com
+homepage=https://github.com/francoisbl/visible_layers
 tracker=https://github.com/francoisbl/visible_layers/issues
 repository=https://github.com/francoisbl/visible_layers
 tags=layers, visibility, dock, interface, toggle, navigation, productivity
