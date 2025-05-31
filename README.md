@@ -50,5 +50,4 @@ This tiny plugin was developed to support day-to-day GIS workflows with clarity 
 
 ## Feedback & contributions
 
-Feel free to open issues or suggest improvements via pull request.  
-If you found this useful, consider starring the repo or sharing it with the QGIS community.
+Feel free to open issues or suggest improvements.
