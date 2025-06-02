@@ -6,6 +6,7 @@ from qgis.PyQt.QtGui import QIcon
 from PyQt5.QtCore import QSize 
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject
+from qgis.core import QgsLayerTreeLayer
 from qgis.utils import iface
 import os
 
@@ -125,6 +126,8 @@ class VisibleLayers:
             iface.showLayerProperties(layer)
 
     def sync_visibility_from_panel(self, node):
+        if not isinstance(node, QgsLayerTreeLayer):
+            return  # Skip group nodes or others
         layer_id = node.layerId()
         item = self.layer_states.get(layer_id)
         if item:
