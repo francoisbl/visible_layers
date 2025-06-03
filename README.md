@@ -51,4 +51,5 @@ This tiny plugin was developed to support day-to-day GIS workflows with clarity 
 ## Feedback & contributions
 
 Feel free to open issues or suggest improvements.
+
 You can also leave a suggestion on [this Reddit thread](https://www.reddit.com/r/QGIS/comments/1l1ehbi/i_made_a_tiny_qgis_plugin_to_filter_visible_layers/).
