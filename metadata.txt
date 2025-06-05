@@ -11,6 +11,6 @@ homepage=https://github.com/francoisbl/visible_layers
 tracker=https://github.com/francoisbl/visible_layers/issues
 repository=https://github.com/francoisbl/visible_layers
 tags=layers, visibility, dock, interface, toggle, navigation, productivity
-changelog=1.0.2 - Excluded non-spatial attribute tables from the panel.
+changelog=1.0.2 - Excluded non-spatial attribute tables from the panel
   1.0.1 - Fixed error when toggling grouped layers
   1.0.0 - Initial release with panel, toggle sync, and refresh features
