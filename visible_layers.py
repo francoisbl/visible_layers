@@ -8,6 +8,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject
 from qgis.core import QgsLayerTreeLayer
 from qgis.core import QgsWkbTypes
+from qgis.core import QgsVectorLayer
 from qgis.utils import iface
 import os
 
