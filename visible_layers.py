@@ -7,6 +7,7 @@ from PyQt5.QtCore import QSize
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject
 from qgis.core import QgsLayerTreeLayer
+from qgis.core import QgsWkbTypes
 from qgis.utils import iface
 import os
 
@@ -96,15 +97,18 @@ class VisibleLayers:
         self.list_widget.blockSignals(True)
         self.list_widget.clear()
         self.layer_states.clear()
-        for layer in QgsProject.instance().layerTreeRoot().findLayers():
-            node = layer
-            if node.isVisible():
-                item = QListWidgetItem(node.name())
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked)
-                item.setData(Qt.UserRole, node.layerId())
-                self.list_widget.addItem(item)
-                self.layer_states[node.layerId()] = item
+        for layer_node in QgsProject.instance().layerTreeRoot().findLayers():
+            if not layer_node.isVisible():
+                continue
+            layer = layer_node.layer()
+            if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.NoGeometry:
+                continue
+            item = QListWidgetItem(layer.name())
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            item.setData(Qt.UserRole, layer.id())
+            self.list_widget.addItem(item)
+            self.layer_states[layer.id()] = item
         self.list_widget.blockSignals(False)
 
     def toggle_layer_visibility(self, item):
