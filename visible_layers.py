@@ -101,8 +101,9 @@ class VisibleLayers:
             if not layer_node.isVisible():
                 continue
             layer = layer_node.layer()
-            if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.NoGeometry:
-                continue
+            if isinstance(layer, QgsVectorLayer):
+                if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.NoGeometry:
+                    continue
             item = QListWidgetItem(layer.name())
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked)
