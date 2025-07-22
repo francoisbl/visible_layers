@@ -25,7 +25,6 @@ class VisibleLayers:
     def initGui(self):
         self.action = QAction("Show Visible Layers Panel", self.iface.mainWindow())
         self.action.triggered.connect(self.toggle_dock)
-        self.iface.addToolBarIcon(self.action)
         self.inject_button_in_layer_panel_toolbar()
         QgsProject.instance().layerTreeRoot().visibilityChanged.connect(self.sync_visibility_from_panel)
         QgsProject.instance().readProject.connect(self.auto_refresh_on_project_load)
@@ -144,7 +143,6 @@ class VisibleLayers:
             self.update_visible_layers()
 
     def unload(self):
-        self.iface.removeToolBarIcon(self.action)
         if self.dock:
             self.iface.removeDockWidget(self.dock)
         if self.button:
