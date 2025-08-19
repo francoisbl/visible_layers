@@ -35,7 +35,7 @@ Only the checked layers are listed in the "Visible Layers" panel for quick acces
 3. Click **Install** and enable the plugin
 
 **From ZIP**
-1. Download the latest `visible_layers_*.zip` from Releases
+1. Download the latest `visible_layers.zip` from Releases
 2. In QGIS: **Plugins → Manage and Install… → Install from ZIP** → select the file
 3. Restart QGIS if needed
 
