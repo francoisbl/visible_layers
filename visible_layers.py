@@ -1,15 +1,12 @@
 from qgis.PyQt.QtWidgets import (
     QAction, QDockWidget, QListWidget, QListWidgetItem,
-    QVBoxLayout, QWidget, QPushButton, QToolButton, QToolBar
+    QVBoxLayout, QWidget, QToolButton, QToolBar
 )
 from qgis.PyQt.QtGui import QIcon
-from PyQt5.QtCore import QSize 
-from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsProject
-from qgis.core import QgsLayerTreeLayer
-from qgis.core import QgsWkbTypes
-from qgis.core import QgsVectorLayer
+from qgis.PyQt.QtCore import Qt, QSize
+from qgis.core import QgsLayerTreeLayer, QgsWkbTypes, QgsProject, QgsVectorLayer
 from qgis.utils import iface
+
 import os
 
 class VisibleLayers:
@@ -84,7 +81,7 @@ class VisibleLayers:
         main_widget.setLayout(layout)
 
         self.dock.setWidget(main_widget)
-        self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
+        self.iface.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self._update_dock_state)
 
     def _update_dock_state(self, visible):
@@ -102,30 +99,30 @@ class VisibleLayers:
                 continue
             layer = layer_node.layer()
             if isinstance(layer, QgsVectorLayer):
-                if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.NoGeometry:
+                if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.Type.NoGeometry:
                     continue
             item = QListWidgetItem(layer.name())
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
-            item.setData(Qt.UserRole, layer.id())
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setData(Qt.ItemDataRole.UserRole, layer.id())
             self.list_widget.addItem(item)
             self.layer_states[layer.id()] = item
         self.list_widget.blockSignals(False)
 
     def toggle_layer_visibility(self, item):
-        layer_id = item.data(Qt.UserRole)
+        layer_id = item.data(Qt.ItemDataRole.UserRole)
         node = QgsProject.instance().layerTreeRoot().findLayer(layer_id)
         if node:
-            node.setItemVisibilityChecked(item.checkState() == Qt.Checked)
+            node.setItemVisibilityChecked(item.checkState() == Qt.CheckState.Checked)
 
     def select_layer_in_panel(self, item):
-        layer_id = item.data(Qt.UserRole)
+        layer_id = item.data(Qt.ItemDataRole.UserRole)
         layer = QgsProject.instance().mapLayer(layer_id)
         if layer:
             iface.setActiveLayer(layer)
 
     def open_layer_properties(self, item):
-        layer_id = item.data(Qt.UserRole)
+        layer_id = item.data(Qt.ItemDataRole.UserRole)
         layer = QgsProject.instance().mapLayer(layer_id)
         if layer:
             iface.showLayerProperties(layer)
@@ -136,7 +133,7 @@ class VisibleLayers:
         layer_id = node.layerId()
         item = self.layer_states.get(layer_id)
         if item:
-            item.setCheckState(Qt.Checked if node.isVisible() else Qt.Unchecked)
+            item.setCheckState(Qt.CheckState.Checked if node.isVisible() else Qt.CheckState.Unchecked)
 
     def auto_refresh_on_project_load(self):
         if self.dock_is_open:
