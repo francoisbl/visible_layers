@@ -29,20 +29,19 @@ Only the checked layers are listed in the "Visible Layers" panel for quick acces
 
 ## Installation
 
-1. Download or clone this repository  
-2. Place the folder in your QGIS plugin directory:
-   ```
-   ~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/
-   ```
-   Or on macOS:
-   ```
-   ~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/
-   ```
-3. Restart QGIS and enable the plugin via Plugins > Manage and Install Plugins
+**From QGIS (recommended)**
+1. In QGIS: **Plugins → Manage and Install Plugins…**
+2. Search for **“Visible Layers”** (official QGIS Plugins repo)
+3. Click **Install** and enable the plugin
+
+**From ZIP**
+1. Download the latest `visible_layers_*.zip` from Releases
+2. In QGIS: **Plugins → Manage and Install… → Install from ZIP** → select the file
+3. Restart QGIS if needed
 
 ## Compatibility
 
-Compatible with QGIS 3.0+
+QGIS **3.x and 4.x** (Qt6-ready).
 
 ## About
 
