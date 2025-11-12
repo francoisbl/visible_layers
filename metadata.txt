@@ -3,7 +3,7 @@ name=Visible Layers
 icon=icon.png
 description=Quickly filter and display only the visible layers in your project.
 about=This plugin adds a toggleable panel to display only the currently visible layers, offering easier access and layer navigation. Access it directly from the Layers panel.
-version=1.2
+version=1.2.1
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99.0
 supportsQt6=True
@@ -13,7 +13,8 @@ homepage=https://github.com/francoisbl/visible_layers
 tracker=https://github.com/francoisbl/visible_layers/issues
 repository=https://github.com/francoisbl/visible_layers
 tags=layers, visibility, dock, interface, toggle, navigation, productivity
-changelog=1.2 - New Auto-Refresh Mode (suggestion from github.com/TurboGraphxBeige):
+changelog=1.2.1 - Fixed issues related to Qt6/QGIS4 compatibility, while maintaining full support for QGIS 3.
+  1.2 - New Auto-Refresh Mode (suggestion from github.com/TurboGraphxBeige):
         * OFF: The Visible Layers panel updates only when manually refreshed; layers and groups can be toggled individually.
         * ON: The panel syncs in real-time with the main Layers panel, including visibility, order, and structure; the list becomes read-only.
     - Full support for groups:
