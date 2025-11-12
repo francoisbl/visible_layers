@@ -9,6 +9,31 @@ from qgis.core import QgsLayerTreeLayer, QgsLayerTreeGroup, QgsWkbTypes, QgsProj
 from qgis.utils import iface
 import os
 
+try:
+    Checked = Qt.CheckState.Checked
+    Unchecked = Qt.CheckState.Unchecked
+except AttributeError:
+    Checked = Qt.Checked
+    Unchecked = Qt.Unchecked
+
+try:
+    ContextMenuPolicy = Qt.ContextMenuPolicy
+    DockWidgetArea = Qt.DockWidgetArea
+except AttributeError:
+    ContextMenuPolicy = Qt
+    DockWidgetArea = Qt
+
+try:
+    UserRole = Qt.ItemDataRole.UserRole
+    DecorationRole = Qt.ItemDataRole.DecorationRole
+except AttributeError:
+    UserRole = Qt.UserRole
+    DecorationRole = Qt.DecorationRole
+
+try:
+    ItemIsEnabled = Qt.ItemFlag.ItemIsEnabled
+except AttributeError:
+    ItemIsEnabled = Qt.ItemIsEnabled
 
 class VisibleLayers:
     def __init__(self, iface_):
@@ -44,7 +69,7 @@ class VisibleLayers:
         try:
             legend_nodes = model.layerLegendNodes(ltl)
             if legend_nodes:
-                icon = legend_nodes[0].data(Qt.ItemDataRole.DecorationRole)
+                icon = legend_nodes[0].data(DecorationRole)
                 if isinstance(icon, QPixmap):
                     icon = QIcon(icon)
                 return icon if isinstance(icon, QIcon) else None
@@ -152,7 +177,7 @@ class VisibleLayers:
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.itemClicked.connect(self._on_item_clicked)
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.setContextMenuPolicy(ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
 
         layout.addWidget(toolbar)
@@ -160,7 +185,7 @@ class VisibleLayers:
         main_widget.setLayout(layout)
 
         self.dock.setWidget(main_widget)
-        self.iface.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
+        self.iface.addDockWidget(DockWidgetArea.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self._update_dock_state)
 
     def _update_dock_state(self, visible):
@@ -214,8 +239,8 @@ class VisibleLayers:
                     it = QTreeWidgetItem(parent_qt_item, [layer.name()])
                     it.setFlags(self._flags_for_item(it.flags(), is_group=False))
                     if not self.auto_refresh_enabled:
-                        it.setCheckState(0, Qt.Checked)
-                    it.setData(0, Qt.UserRole, ("layer", layer.id()))
+                        it.setCheckState(0, Qt.CheckState.Checked)
+                    it.setData(0, UserRole, ("layer", layer.id()))
                     icon = self._icon_for_layernode(layer.id())
                     if icon:
                         it.setIcon(0, icon)
@@ -228,10 +253,10 @@ class VisibleLayers:
 
                     path = self._node_path(child)
                     git = QTreeWidgetItem(parent_qt_item, [child.name()])
-                    git.setFlags(self._flags_for_item(Qt.ItemIsEnabled, is_group=True))
+                    git.setFlags(self._flags_for_item(ItemIsEnabled, is_group=True))
                     if not self.auto_refresh_enabled:
-                        git.setCheckState(0, Qt.Checked)
-                    git.setData(0, Qt.UserRole, ("group", path))
+                        git.setCheckState(0, Qt.CheckState.Checked)
+                    git.setData(0, UserRole, ("group", path))
                     self.group_items[path] = git
 
                     add_children(git, child)
@@ -244,7 +269,7 @@ class VisibleLayers:
     def _on_item_clicked(self, item, column):
         if not item:
             return
-        kind, val = item.data(0, Qt.UserRole) or (None, None)
+        kind, val = item.data(0, UserRole) or (None, None)
         if kind == "layer":
             layer = QgsProject.instance().mapLayer(val)
             if layer:
@@ -255,7 +280,7 @@ class VisibleLayers:
             return         
         if not item:
             return
-        kind, val = item.data(0, Qt.UserRole) or (None, None)
+        kind, val = item.data(0, UserRole) or (None, None)
         if kind == "layer":
             layer = QgsProject.instance().mapLayer(val)
             if layer:
@@ -264,12 +289,12 @@ class VisibleLayers:
     def _on_item_changed(self, item, column):
         if not item:
             return
-        kind, val = item.data(0, Qt.UserRole) or (None, None)
+        kind, val = item.data(0, UserRole) or (None, None)
         if kind == "layer":
             layer_id = val
             node = QgsProject.instance().layerTreeRoot().findLayer(layer_id)
             if node:
-                node.setItemVisibilityChecked(item.checkState(0) == Qt.Checked)
+                node.setItemVisibilityChecked(item.checkState(0) == Checked)
         elif kind == "group":
             root = QgsProject.instance().layerTreeRoot()
             g = root
@@ -282,7 +307,7 @@ class VisibleLayers:
                     break
                 g = nxt
             if g is not None:
-                vis = (item.checkState(0) == Qt.Checked)
+                vis = (item.checkState(0) == Checked)
                 try:
                     g.setItemVisibilityCheckedRecursive(vis)
                 except Exception:
@@ -293,7 +318,7 @@ class VisibleLayers:
         it = self.tree.itemAt(pos)
         if not it:
             return
-        kind, val = it.data(0, Qt.UserRole) or (None, None)
+        kind, val = it.data(0, UserRole) or (None, None)
 
         if kind == "layer":
             layer = QgsProject.instance().mapLayer(val)
@@ -325,7 +350,7 @@ class VisibleLayers:
 
             def _toggle_group():
                 state = it.checkState(0)
-                it.setCheckState(0, Qt.Unchecked if state == Qt.Checked else Qt.Checked)
+                it.setCheckState(0, Unchecked if state == Checked else Checked)
 
             act_toggle.triggered.connect(_toggle_group)
             act_expand.triggered.connect(lambda: self.tree.expandItem(it))
@@ -345,7 +370,7 @@ class VisibleLayers:
                 return
             self.tree.blockSignals(True)
             try:
-                item.setCheckState(0, Qt.Checked if checked else Qt.Unchecked)
+                item.setCheckState(0, Checked if checked else Unchecked)
             finally:
                 self.tree.blockSignals(False)
 
@@ -506,9 +531,16 @@ class VisibleLayers:
         self.update_visible_tree()
 
     def _flags_for_item(self, base_flags, is_group=False):
-        flags = base_flags | Qt.ItemIsSelectable | Qt.ItemIsEnabled
-        if not self.auto_refresh_enabled:
-            flags |= Qt.ItemIsUserCheckable
+        try:
+            # PyQt6 (QGIS 4)
+            flags = base_flags | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+            if not self.auto_refresh_enabled:
+                flags |= Qt.ItemFlag.ItemIsUserCheckable
+        except AttributeError:
+            # PyQt5 (QGIS 3)
+            flags = base_flags | Qt.ItemIsSelectable | Qt.ItemIsEnabled
+            if not self.auto_refresh_enabled:
+                flags |= Qt.ItemIsUserCheckable
         return flags
 
     def _schedule_autorefresh(self, delay_ms=60):
@@ -519,4 +551,3 @@ class VisibleLayers:
             self._auto_timer.setSingleShot(True)
             self._auto_timer.timeout.connect(self.update_visible_tree)
         self._auto_timer.start(delay_ms)
-
