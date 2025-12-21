@@ -5,22 +5,15 @@ Visible Layers is a lightweight plugin for QGIS that displays only the layers cu
 It enhances readability and efficiency when working with complex projects by allowing users to focus solely on the layers that matter.
 ## Features
 
-- Show only visible layers (i.e., checked in the Layers Panel)
-- Toggle the panel using a toolbar button directly inside the Layers Panel
-- Auto-refresh when opening a new QGIS project
-- Refresh manually if needed using a "Refresh" button
-- Click a layer in the dock to select it in the Layers Panel
-- Double-click a layer to open its Layer Properties dialog
-- Synchronize visibility: checking/unchecking a layer in the dock updates the main panel
-- Preserves layer order and integrates without affecting your project structure
-- Uses SVG icons, native QGIS styling, and no external dependencies
+- Displays only visible layers in a dedicated panel
+- Accessible from the Layers Panel toolbar
+- Synchronizes visibility changes with the main Layers Panel
+- Quick layer selection and editing
 
 ## Typical use cases
 
 - Quickly scan only the layers that are currently shown on the map
 - Declutter your interface when navigating complex projects with many utility/background layers
-- Share a screenshot or perform visual analysis with only relevant layers visible
-- Stay focused when toggling themes, temporal layers, or mapsheets
 
 ## How to use the plugin
 
