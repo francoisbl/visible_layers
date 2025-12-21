@@ -50,7 +50,6 @@ class VisibleLayers:
         self.act_toggle_auto = None
         self._auto_timer = None
         self._action_added_to_menu = False
-        self._options_button = None
 
     def _node_path(self, group_node: QgsLayerTreeGroup):
         path = []
@@ -142,24 +141,22 @@ class VisibleLayers:
             if not main_window:
                 return
             
+            layer_tree_view = self.iface.layerTreeView()
             dock = None
             for candidate_dock in main_window.findChildren(QDockWidget):
                 obj_name = candidate_dock.objectName()
                 if obj_name in ('LayersPanel', 'Layers', 'qgis_layer_tree_dock'):
-                    layer_tree_view = self.iface.layerTreeView()
                     if layer_tree_view and candidate_dock.widget():
                         if layer_tree_view in candidate_dock.widget().findChildren(type(layer_tree_view), recursive=True):
                             dock = candidate_dock
                             break
                 elif 'layer' in candidate_dock.windowTitle().lower():
-                    layer_tree_view = self.iface.layerTreeView()
                     if layer_tree_view and candidate_dock.widget():
                         if layer_tree_view in candidate_dock.widget().findChildren(type(layer_tree_view), recursive=True):
                             dock = candidate_dock
                             break
             
             if not dock:
-                layer_tree_view = self.iface.layerTreeView()
                 if layer_tree_view:
                     widget = layer_tree_view
                     max_depth = 10
@@ -216,14 +213,13 @@ class VisibleLayers:
                 menu = QMenu(options_button)
                 options_button.setMenu(menu)
             
-            if self.action not in menu.actions():
-                if menu.actions():
-                    menu.addSeparator()
-                menu.addAction(self.action)
-                self._action_added_to_menu = True
-                self._options_button = options_button
+                if self.action not in menu.actions():
+                    if menu.actions():
+                        menu.addSeparator()
+                    menu.addAction(self.action)
+                    self._action_added_to_menu = True
                     
-        except Exception as e:
+        except Exception:
             pass
 
     def toggle_dock(self):
@@ -324,7 +320,6 @@ class VisibleLayers:
                 if isinstance(n, QgsLayerTreeLayer):
                     if n.isVisible():
                         lyr = n.layer()
-                        from qgis.core import QgsVectorLayer, QgsWkbTypes
                         if isinstance(lyr, QgsVectorLayer):
                             if not lyr.isSpatial() or lyr.geometryType() == QgsWkbTypes.NoGeometry:
                                 continue
@@ -340,7 +335,6 @@ class VisibleLayers:
                     if not child.isVisible():
                         continue
                     layer = child.layer()
-                    from qgis.core import QgsVectorLayer, QgsWkbTypes
                     if isinstance(layer, QgsVectorLayer):
                         if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.NoGeometry:
                             continue
@@ -386,7 +380,7 @@ class VisibleLayers:
 
     def _on_item_double_clicked(self, item, column):
         if self.auto_refresh_enabled:
-            return         
+            return
         if not item:
             return
         kind, val = item.data(0, UserRole) or (None, None)
@@ -482,8 +476,6 @@ class VisibleLayers:
                 item.setCheckState(0, Checked if checked else Unchecked)
             finally:
                 self.tree.blockSignals(False)
-
-        from qgis.core import QgsLayerTreeLayer, QgsLayerTreeGroup
 
         if isinstance(node, QgsLayerTreeLayer):
             it = self.layer_items.get(node.layerId())
