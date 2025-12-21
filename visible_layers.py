@@ -119,11 +119,7 @@ class VisibleLayers:
         parent = self.iface.layerTreeView().parent()
         toolbar = parent.findChild(QToolBar)
         if toolbar:
-            # Use addAction instead of addWidget so it appears in dropdown menu when collapsed
-            # The action is already created in initGui with icon and text
             toolbar.addAction(self.action)
-            # Keep reference to button for icon updates, but use action for toolbar
-            # Find the button that was created by addAction
             for widget in toolbar.findChildren(QToolButton):
                 if widget.defaultAction() == self.action:
                     self.button = widget
@@ -131,8 +127,6 @@ class VisibleLayers:
 
     def inject_action_in_layer_panel_menu(self):
         """Add action to Layers Panel dock widget menu so it appears in dropdown when collapsed"""
-        # Use a timer to ensure the UI is fully initialized before trying to access the dock
-        # Try multiple times as the UI might not be ready immediately
         QTimer.singleShot(100, self._add_action_to_dock_menu)
         QTimer.singleShot(500, self._add_action_to_dock_menu)
         QTimer.singleShot(1000, self._add_action_to_dock_menu)
@@ -140,7 +134,6 @@ class VisibleLayers:
     
     def _add_action_to_dock_menu(self):
         """Add action to Layers Panel dock widget's menu"""
-        # Prevent adding the action multiple times
         if self._action_added_to_menu:
             return
         
@@ -149,19 +142,15 @@ class VisibleLayers:
             if not main_window:
                 return
             
-            # Method 1: Find dock by objectName (most reliable)
             dock = None
             for candidate_dock in main_window.findChildren(QDockWidget):
                 obj_name = candidate_dock.objectName()
-                # QGIS Layers Panel might have different object names in different versions
                 if obj_name in ('LayersPanel', 'Layers', 'qgis_layer_tree_dock'):
-                    # Verify it contains the layer tree view
                     layer_tree_view = self.iface.layerTreeView()
                     if layer_tree_view and candidate_dock.widget():
                         if layer_tree_view in candidate_dock.widget().findChildren(type(layer_tree_view), recursive=True):
                             dock = candidate_dock
                             break
-                # Also check by window title
                 elif 'layer' in candidate_dock.windowTitle().lower():
                     layer_tree_view = self.iface.layerTreeView()
                     if layer_tree_view and candidate_dock.widget():
@@ -169,7 +158,6 @@ class VisibleLayers:
                             dock = candidate_dock
                             break
             
-            # Method 2: Find dock by walking up from layer tree view
             if not dock:
                 layer_tree_view = self.iface.layerTreeView()
                 if layer_tree_view:
@@ -187,17 +175,13 @@ class VisibleLayers:
             if not dock:
                 return
             
-            # Find the options button in the dock widget's title bar
-            # The options button is typically named 'qt_dockwidget_options'
             options_button = None
             
-            # Method 1: Find by objectName
             for btn in dock.findChildren(QToolButton):
                 if btn.objectName() == 'qt_dockwidget_options':
                     options_button = btn
                     break
             
-            # Method 2: Find by looking in title bar widget
             if not options_button:
                 title_bar = dock.titleBarWidget()
                 if title_bar:
@@ -206,19 +190,14 @@ class VisibleLayers:
                             options_button = btn
                             break
             
-            # Method 3: Find any button with a menu in the dock (likely the options button)
             if not options_button:
                 all_buttons = dock.findChildren(QToolButton)
                 for btn in all_buttons:
-                    # Options button typically has a menu or is in the title bar area
                     if btn.menu() is not None:
-                        # Check if it's likely the options button (not our custom button)
                         if btn != self.button:
                             options_button = btn
                             break
             
-            # Method 4: Look for buttons in widgets that are direct children of the dock
-            # (title bar widgets are often direct children)
             if not options_button:
                 for child in dock.children():
                     if isinstance(child, QWidget):
@@ -232,13 +211,11 @@ class VisibleLayers:
             if not options_button:
                 return
             
-            # Get or create the menu for the options button
             menu = options_button.menu()
             if menu is None:
                 menu = QMenu(options_button)
                 options_button.setMenu(menu)
             
-            # Add the action to the menu if it's not already there
             if self.action not in menu.actions():
                 if menu.actions():
                     menu.addSeparator()
@@ -247,8 +224,6 @@ class VisibleLayers:
                 self._options_button = options_button
                     
         except Exception as e:
-            # If we can't add to menu, that's okay - toolbar button will still work when expanded
-            # Print for debugging if needed
             pass
 
     def toggle_dock(self):
@@ -261,7 +236,6 @@ class VisibleLayers:
             if icon.isNull():
                 icon = QIcon.fromTheme("view-visible")
             self.action.setIcon(icon)
-            # Also update button if it exists (for visual consistency)
             if self.button:
                 self.button.setIcon(icon)
             self.dock_is_open = False
@@ -273,7 +247,6 @@ class VisibleLayers:
             if icon.isNull():
                 icon = QIcon.fromTheme("view-hidden")
             self.action.setIcon(icon)
-            # Also update button if it exists (for visual consistency)
             if self.button:
                 self.button.setIcon(icon)
             self.dock_is_open = True
@@ -330,7 +303,6 @@ class VisibleLayers:
             if icon.isNull():
                 icon = QIcon.fromTheme("view-visible")
             self.action.setIcon(icon)
-            # Also update button if it exists (for visual consistency)
             if self.button:
                 self.button.setIcon(icon)
 
