@@ -1,20 +1,13 @@
-from functools import partial
 from qgis.PyQt.QtWidgets import (
-    QAction, QDockWidget, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget, QToolButton, QToolBar, QMenu
+    QAction, QAbstractItemView, QDockWidget, QTreeView,
+    QVBoxLayout, QWidget, QToolButton, QToolBar, QMenu,
 )
-from qgis.PyQt.QtGui import QIcon, QPixmap
-from qgis.PyQt.QtCore import Qt, QSize, QPoint, QTimer
-from qgis.core import QgsLayerTreeLayer, QgsLayerTreeGroup, QgsWkbTypes, QgsProject, QgsVectorLayer
-from qgis.utils import iface
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtCore import Qt, QSize, QPoint, QTimer, QModelIndex
+from qgis.core import (
+    QgsLayerTreeLayer, QgsLayerTreeGroup, QgsProject, QgsVectorLayer,
+)
 import os
-
-try:
-    Checked = Qt.CheckState.Checked
-    Unchecked = Qt.CheckState.Unchecked
-except AttributeError:
-    Checked = Qt.Checked
-    Unchecked = Qt.Unchecked
 
 try:
     ContextMenuPolicy = Qt.ContextMenuPolicy
@@ -24,88 +17,154 @@ except AttributeError:
     DockWidgetArea = Qt
 
 try:
-    UserRole = Qt.ItemDataRole.UserRole
-    DecorationRole = Qt.ItemDataRole.DecorationRole
+    DragDrop = QAbstractItemView.DragDropMode.DragDrop
+    MoveAction = Qt.DropAction.MoveAction
 except AttributeError:
-    UserRole = Qt.UserRole
-    DecorationRole = Qt.DecorationRole
+    DragDrop = QAbstractItemView.DragDrop
+    MoveAction = Qt.MoveAction
 
-try:
-    ItemIsEnabled = Qt.ItemFlag.ItemIsEnabled
-except AttributeError:
-    ItemIsEnabled = Qt.ItemIsEnabled
 
 class VisibleLayers:
+    """QGIS plugin — shows a filtered view of the Layers panel containing
+    only the currently visible, spatial layers.
+
+    Architecture: a plain QTreeView shares the same QgsLayerTreeModel as the
+    main Layers panel.  Invisible / non-spatial rows are hidden with
+    setRowHidden(), which is per-view and does not touch the source model.
+    Because the model is shared, checkbox changes propagate instantly to the
+    main Layers panel and vice-versa, and every icon / legend / group feature
+    comes for free.
+    """
+
     def __init__(self, iface_):
         self.iface = iface_
         self.action = None
         self.dock = None
-        self.tree = None
+        self.tree_view = None       # QTreeView backed by shared QgsLayerTreeModel
+        self._src_model = None      # QgsLayerTreeModel from iface.layerTreeView()
         self.button = None
-        self.layer_items = {}
-        self.group_items = {}
-        self._icon_connections = {}
         self.dock_is_open = False
         self.auto_refresh_enabled = False
         self.act_toggle_auto = None
         self._auto_timer = None
         self._action_added_to_menu = False
 
-    def _node_path(self, group_node: QgsLayerTreeGroup):
-        path = []
-        n = group_node
-        while n and n.parent() is not None:
-            path.append(n.name())
-            n = n.parent()
-        return tuple(reversed(path))
+    # ── helpers ────────────────────────────────────────────────────────────
 
-    def _icon_for_layernode(self, layer_id):
-        lt_view = self.iface.layerTreeView()
-        if not lt_view:
-            return None
-        model = lt_view.layerTreeModel()
-        ltl = QgsProject.instance().layerTreeRoot().findLayer(layer_id)
-        if not ltl:
+    def _node_at(self, idx):
+        """Return the QgsLayerTreeNode for *idx*, or None (e.g. legend row)."""
+        if not idx.isValid() or self._src_model is None:
             return None
         try:
-            legend_nodes = model.layerLegendNodes(ltl)
-            if legend_nodes:
-                icon = legend_nodes[0].data(DecorationRole)
-                if isinstance(icon, QPixmap):
-                    icon = QIcon(icon)
-                return icon if isinstance(icon, QIcon) else None
+            return self._src_model.index2node(idx)
         except Exception:
-            pass
-        return None
+            return None
+
+    def _group_has_visible_content(self, group_node):
+        """True if *group_node* contains at least one visible, spatial layer."""
+        for child in group_node.children():
+            if isinstance(child, QgsLayerTreeLayer):
+                if child.isVisible():
+                    layer = child.layer()
+                    if layer and not (isinstance(layer, QgsVectorLayer)
+                                     and not layer.isSpatial()):
+                        return True
+            elif isinstance(child, QgsLayerTreeGroup):
+                if child.isVisible() and self._group_has_visible_content(child):
+                    return True
+        return False
+
+    def _should_hide(self, node):
+        """True if the row for *node* should be hidden in the VL panel."""
+        if node is None:
+            return False  # Legend pseudo-node — always visible
+        if isinstance(node, QgsLayerTreeLayer):
+            if not node.isVisible():
+                return True
+            layer = node.layer()
+            if layer is None:
+                return True
+            if isinstance(layer, QgsVectorLayer) and not layer.isSpatial():
+                return True
+            return False
+        if isinstance(node, QgsLayerTreeGroup):
+            if not node.isVisible():
+                return True
+            return not self._group_has_visible_content(node)
+        return False
+
+    def _hide_rows(self, parent):
+        """Recursively hide/show rows to match current layer visibility."""
+        if self.tree_view is None or self._src_model is None:
+            return
+        for row in range(self._src_model.rowCount(parent)):
+            idx = self._src_model.index(row, 0, parent)
+            node = self._node_at(idx)
+            hide = self._should_hide(node)
+            self.tree_view.setRowHidden(row, parent, hide)
+            if not hide:
+                self._hide_rows(idx)  # Only recurse into visible rows
+
+    def _refresh_hidden(self):
+        """Re-apply the visibility filter and expand all visible nodes."""
+        if self.tree_view is None or self._src_model is None:
+            return
+        self._hide_rows(QModelIndex())
+        self.tree_view.expandAll()
+
+    def _set_action_icon(self, filename, theme_fallback):
+        icon_path = os.path.join(os.path.dirname(__file__), "icons", filename)
+        icon = QIcon(icon_path)
+        if icon.isNull():
+            icon = QIcon.fromTheme(theme_fallback)
+        self.action.setIcon(icon)
+        if self.button:
+            self.button.setIcon(icon)
+
+    # ── initGui / unload ──────────────────────────────────────────────────
 
     def initGui(self):
         icon_path = os.path.join(os.path.dirname(__file__), "icons", "glasses_on.svg")
         icon = QIcon(icon_path)
         if icon.isNull():
             icon = QIcon.fromTheme("view-visible")
-        
+
         self.action = QAction(icon, "Visible Layers Panel", self.iface.mainWindow())
         self.action.triggered.connect(self.toggle_dock)
-        self.inject_button_in_layer_panel_toolbar()
-        self.inject_action_in_layer_panel_menu()
+        self._inject_button_in_layer_panel_toolbar()
+        self._inject_action_in_layer_panel_menu()
 
         root = QgsProject.instance().layerTreeRoot()
-        root.visibilityChanged.connect(self._on_tree_visibility_changed)
-        QgsProject.instance().readProject.connect(self.auto_refresh_on_project_load)
+        root.visibilityChanged.connect(self._on_visibility_changed)
+        QgsProject.instance().layerWasAdded.connect(self._on_any_change)
+        QgsProject.instance().layerWillBeRemoved.connect(self._on_any_change)
+        QgsProject.instance().readProject.connect(self._on_project_loaded)
 
     def unload(self):
         root = QgsProject.instance().layerTreeRoot()
-        try:
-            root.visibilityChanged.disconnect(self._on_tree_visibility_changed)
-        except Exception:
-            pass
-        try:
-            QgsProject.instance().readProject.disconnect(self.auto_refresh_on_project_load)
-        except Exception:
-            pass
+        for sig, slot in [
+            (root.visibilityChanged,                       self._on_visibility_changed),
+            (QgsProject.instance().layerWasAdded,         self._on_any_change),
+            (QgsProject.instance().layerWillBeRemoved,    self._on_any_change),
+            (QgsProject.instance().readProject,           self._on_project_loaded),
+        ]:
+            try:
+                sig.disconnect(slot)
+            except Exception:
+                pass
 
-        self._disconnect_icon_updates()
-        self._disconnect_project_signals_for_autorefresh()
+        self._disconnect_model_signals()
+
+        if self._auto_timer:
+            self._auto_timer.stop()
+
+        if self.action:
+            lt_view = self.iface.layerTreeView()
+            parent = lt_view.parent() if lt_view else None
+            toolbar = parent.findChild(QToolBar) if parent else None
+            if toolbar:
+                toolbar.removeAction(self.action)
+            self.action = None
 
         if self.dock:
             self.iface.removeDockWidget(self.dock)
@@ -113,10 +172,15 @@ class VisibleLayers:
         if self.button:
             self.button.setParent(None)
             self.button = None
+        self.tree_view = None
+        self._src_model = None
 
-    def inject_button_in_layer_panel_toolbar(self):
-        parent = self.iface.layerTreeView().parent()
-        toolbar = parent.findChild(QToolBar)
+    # ── toolbar / menu injection ───────────────────────────────────────────
+
+    def _inject_button_in_layer_panel_toolbar(self):
+        lt_view = self.iface.layerTreeView()
+        parent = lt_view.parent() if lt_view else None
+        toolbar = parent.findChild(QToolBar) if parent else None
         if toolbar:
             toolbar.addAction(self.action)
             for widget in toolbar.findChildren(QToolButton):
@@ -124,531 +188,347 @@ class VisibleLayers:
                     self.button = widget
                     break
 
-    def inject_action_in_layer_panel_menu(self):
-        """Add action to Layers Panel dock widget menu so it appears in dropdown when collapsed"""
-        QTimer.singleShot(100, self._add_action_to_dock_menu)
-        QTimer.singleShot(500, self._add_action_to_dock_menu)
-        QTimer.singleShot(1000, self._add_action_to_dock_menu)
-        QTimer.singleShot(2000, self._add_action_to_dock_menu)
-    
+    def _inject_action_in_layer_panel_menu(self):
+        """Schedule the action to be added to the Layers Panel title-bar menu."""
+        for delay in (100, 500, 1000, 2000):
+            QTimer.singleShot(delay, self._add_action_to_dock_menu)
+
     def _add_action_to_dock_menu(self):
-        """Add action to Layers Panel dock widget's menu"""
         if self._action_added_to_menu:
             return
-        
         try:
             main_window = self.iface.mainWindow()
             if not main_window:
                 return
-            
+
             layer_tree_view = self.iface.layerTreeView()
             dock = None
-            for candidate_dock in main_window.findChildren(QDockWidget):
-                obj_name = candidate_dock.objectName()
-                if obj_name in ('LayersPanel', 'Layers', 'qgis_layer_tree_dock'):
-                    if layer_tree_view and candidate_dock.widget():
-                        if layer_tree_view in candidate_dock.widget().findChildren(type(layer_tree_view), recursive=True):
-                            dock = candidate_dock
+
+            # Strategy 1: look by known object names / title
+            for candidate in main_window.findChildren(QDockWidget):
+                name = candidate.objectName()
+                if name in ('LayersPanel', 'Layers', 'qgis_layer_tree_dock'):
+                    if layer_tree_view and candidate.widget():
+                        if layer_tree_view in candidate.widget().findChildren(
+                                type(layer_tree_view)):
+                            dock = candidate
                             break
-                elif 'layer' in candidate_dock.windowTitle().lower():
-                    if layer_tree_view and candidate_dock.widget():
-                        if layer_tree_view in candidate_dock.widget().findChildren(type(layer_tree_view), recursive=True):
-                            dock = candidate_dock
+                elif 'layer' in candidate.windowTitle().lower():
+                    if layer_tree_view and candidate.widget():
+                        if layer_tree_view in candidate.widget().findChildren(
+                                type(layer_tree_view)):
+                            dock = candidate
                             break
-            
-            if not dock:
-                if layer_tree_view:
-                    widget = layer_tree_view
-                    max_depth = 10
-                    depth = 0
-                    while widget and depth < max_depth:
-                        parent = widget.parent()
-                        if isinstance(parent, QDockWidget):
-                            dock = parent
-                            break
-                        widget = parent
-                        depth += 1
-            
+
+            # Strategy 2: walk up from the layer tree view
+            if not dock and layer_tree_view:
+                widget = layer_tree_view
+                for _ in range(10):
+                    p = widget.parent()
+                    if isinstance(p, QDockWidget):
+                        dock = p
+                        break
+                    if p is None:
+                        break
+                    widget = p
+
             if not dock:
                 return
-            
+
+            # Find the title-bar options button
             options_button = None
-            
             for btn in dock.findChildren(QToolButton):
                 if btn.objectName() == 'qt_dockwidget_options':
                     options_button = btn
                     break
-            
             if not options_button:
-                title_bar = dock.titleBarWidget()
-                if title_bar:
-                    for btn in title_bar.findChildren(QToolButton):
-                        if btn.objectName() == 'qt_dockwidget_options':
-                            options_button = btn
-                            break
-            
-            if not options_button:
-                all_buttons = dock.findChildren(QToolButton)
-                for btn in all_buttons:
-                    if btn.menu() is not None:
-                        if btn != self.button:
-                            options_button = btn
-                            break
-            
-            if not options_button:
-                for child in dock.children():
-                    if isinstance(child, QWidget):
-                        for btn in child.findChildren(QToolButton):
-                            if btn.menu() is not None and btn != self.button:
-                                options_button = btn
-                                break
-                        if options_button:
-                            break
-            
+                for btn in dock.findChildren(QToolButton):
+                    if btn.menu() is not None and btn is not self.button:
+                        options_button = btn
+                        break
+
             if not options_button:
                 return
-            
+
             menu = options_button.menu()
             if menu is None:
                 menu = QMenu(options_button)
                 options_button.setMenu(menu)
-            
-                if self.action not in menu.actions():
-                    if menu.actions():
-                        menu.addSeparator()
-                    menu.addAction(self.action)
-                    self._action_added_to_menu = True
-                    
+
+            if self.action not in menu.actions():
+                if menu.actions():
+                    menu.addSeparator()
+                menu.addAction(self.action)
+                self._action_added_to_menu = True
+
         except Exception:
             pass
 
+    # ── dock creation / toggle ─────────────────────────────────────────────
+
     def toggle_dock(self):
         if not self.dock:
-            self.create_dock()
+            self._create_dock()
         if self.dock_is_open:
             self.dock.hide()
-            icon_path = os.path.join(os.path.dirname(__file__), "icons", "glasses_on.svg")
-            icon = QIcon(icon_path)
-            if icon.isNull():
-                icon = QIcon.fromTheme("view-visible")
-            self.action.setIcon(icon)
-            if self.button:
-                self.button.setIcon(icon)
+            self._set_action_icon("glasses_on.svg", "view-visible")
             self.dock_is_open = False
         else:
-            self.update_visible_tree()
+            self._refresh_hidden()
             self.dock.show()
-            icon_path = os.path.join(os.path.dirname(__file__), "icons", "glasses_off.svg")
-            icon = QIcon(icon_path)
-            if icon.isNull():
-                icon = QIcon.fromTheme("view-hidden")
-            self.action.setIcon(icon)
-            if self.button:
-                self.button.setIcon(icon)
+            self._set_action_icon("glasses_off.svg", "view-hidden")
             self.dock_is_open = True
 
-    def create_dock(self):
-        self.dock = QDockWidget("Visible Layers", self.iface.mainWindow())
-        main_widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+    def _create_dock(self):
+        # ── Grab the shared model from the main Layers panel ──────────────
+        lt_view = self.iface.layerTreeView()
+        self._src_model = lt_view.layerTreeModel()
 
+        # ── QTreeView backed by the shared model ──────────────────────────
+        self.tree_view = QTreeView()
+        self.tree_view.setModel(self._src_model)
+        self.tree_view.header().setVisible(False)
+        self.tree_view.setIndentation(14)
+        self.tree_view.setContextMenuPolicy(ContextMenuPolicy.CustomContextMenu)
+        self.tree_view.customContextMenuRequested.connect(self._show_context_menu)
+        self.tree_view.doubleClicked.connect(self._on_double_clicked)
+        self.tree_view.clicked.connect(self._on_clicked)
+
+        # Drag-and-drop reordering — the shared QgsLayerTreeModel handles the
+        # actual move, so reordering here propagates to the Layers panel.
+        self.tree_view.setDragEnabled(True)
+        self.tree_view.setAcceptDrops(True)
+        self.tree_view.setDropIndicatorShown(True)
+        self.tree_view.setDragDropMode(DragDrop)
+        self.tree_view.setDefaultDropAction(MoveAction)
+
+        # ── Toolbar ───────────────────────────────────────────────────────
         toolbar = QToolBar()
         toolbar.setIconSize(QSize(16, 16))
         toolbar.setStyleSheet("QToolBar { border: none; }")
-        refresh_action = QAction(QIcon(":/images/themes/default/mActionRefresh.svg"),
-                                 "Refresh visible layers", self.iface.mainWindow())
-        refresh_action.triggered.connect(self.update_visible_tree)
+
+        refresh_action = QAction(
+            QIcon(":/images/themes/default/mActionRefresh.svg"),
+            "Refresh", self.iface.mainWindow(),
+        )
+        refresh_action.triggered.connect(self._refresh_hidden)
         toolbar.addAction(refresh_action)
 
-        self.act_toggle_auto = QAction(self.iface.mainWindow())
-        icon_off = QIcon(os.path.join(os.path.dirname(__file__), "icons", "mActionOff.svg"))
+        icon_off_path = os.path.join(os.path.dirname(__file__), "icons", "mActionOff.svg")
+        icon_off = QIcon(icon_off_path)
         if icon_off.isNull():
             icon_off = QIcon.fromTheme("media-playback-stop")
+        self.act_toggle_auto = QAction(self.iface.mainWindow())
         self.act_toggle_auto.setIcon(icon_off)
         self.act_toggle_auto.setToolTip("Activate Auto-refresh")
         self.act_toggle_auto.setCheckable(True)
         self.act_toggle_auto.setChecked(False)
         self.act_toggle_auto.triggered.connect(self._toggle_auto_refresh)
-
         toolbar.addAction(self.act_toggle_auto)
 
-        self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(14)
-        self.tree.itemChanged.connect(self._on_item_changed)
-        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
-        self.tree.itemClicked.connect(self._on_item_clicked)
-        self.tree.setContextMenuPolicy(ContextMenuPolicy.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._show_context_menu)
-
+        # ── Layout ────────────────────────────────────────────────────────
+        main_widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         layout.addWidget(toolbar)
-        layout.addWidget(self.tree)
+        layout.addWidget(self.tree_view)
         main_widget.setLayout(layout)
 
+        # ── Dock widget ───────────────────────────────────────────────────
+        self.dock = QDockWidget("Visible Layers", self.iface.mainWindow())
         self.dock.setWidget(main_widget)
         self.iface.addDockWidget(DockWidgetArea.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self._update_dock_state)
 
+        # Always-on: re-apply filter after any structural change (insert or move),
+        # regardless of auto-refresh mode.
+        for sig in (self._src_model.rowsInserted, self._src_model.rowsMoved):
+            sig.connect(self._on_structure_changed)
+
+        if self.auto_refresh_enabled:
+            self._connect_model_signals()
+
     def _update_dock_state(self, visible):
         self.dock_is_open = visible
         if not visible:
-            icon_path = os.path.join(os.path.dirname(__file__), "icons", "glasses_on.svg")
-            icon = QIcon(icon_path)
-            if icon.isNull():
-                icon = QIcon.fromTheme("view-visible")
-            self.action.setIcon(icon)
-            if self.button:
-                self.button.setIcon(icon)
+            self._set_action_icon("glasses_on.svg", "view-visible")
 
-    def update_visible_tree(self):
-        if self.tree is None:
+    # ── signal handlers ───────────────────────────────────────────────────
+
+    def _on_visibility_changed(self, node):
+        if self.dock_is_open and self.auto_refresh_enabled:
+            self._schedule_refresh()
+
+    def _on_any_change(self, *_):
+        if self.dock_is_open and self.auto_refresh_enabled:
+            self._schedule_refresh()
+
+    def _on_model_changed(self, *_):
+        if self.dock_is_open and self.auto_refresh_enabled:
+            self._schedule_refresh()
+
+    def _on_structure_changed(self, *_):
+        """Always-on: re-apply the visibility filter after any structural change.
+
+        Connected to rowsInserted and rowsMoved regardless of auto-refresh mode.
+        - rowsInserted: Qt shows new rows by default (not hidden); we must
+          evaluate them immediately even in manual mode.
+        - rowsMoved: drag-and-drop in the VL panel moves rows in the shared
+          model (propagating to the Layers panel); the filter must be
+          re-applied so that groups which become empty are hidden.
+        A 100 ms debounce covers atomic QGIS operations such as "Group
+        Selected" (group inserted then layers moved in).
+        """
+        if not self.dock_is_open or self.tree_view is None:
             return
-        self.tree.blockSignals(True)
-        self._disconnect_icon_updates()
-        self.tree.clear()
-        self.layer_items.clear()
-        self.group_items.clear()
+        self._schedule_refresh(delay_ms=100)
 
-        root = QgsProject.instance().layerTreeRoot()
-
-        def has_visible_descendant(g):
-            if not g.isVisible():
-                return False
-            for n in g.children():
-                if isinstance(n, QgsLayerTreeLayer):
-                    if n.isVisible():
-                        lyr = n.layer()
-                        if isinstance(lyr, QgsVectorLayer):
-                            if not lyr.isSpatial() or lyr.geometryType() == QgsWkbTypes.NoGeometry:
-                                continue
-                        return True
-                elif isinstance(n, QgsLayerTreeGroup):
-                    if has_visible_descendant(n):
-                        return True
-            return False
-
-        def add_children(parent_qt_item, parent_node):
-            for child in parent_node.children():
-                if isinstance(child, QgsLayerTreeLayer):
-                    if not child.isVisible():
-                        continue
-                    layer = child.layer()
-                    if isinstance(layer, QgsVectorLayer):
-                        if not layer.isSpatial() or layer.geometryType() == QgsWkbTypes.NoGeometry:
-                            continue
-
-                    it = QTreeWidgetItem(parent_qt_item, [layer.name()])
-                    it.setFlags(self._flags_for_item(it.flags(), is_group=False))
-                    if not self.auto_refresh_enabled:
-                        it.setCheckState(0, Qt.CheckState.Checked)
-                    it.setData(0, UserRole, ("layer", layer.id()))
-                    icon = self._icon_for_layernode(layer.id())
-                    if icon:
-                        it.setIcon(0, icon)
-                    self.layer_items[layer.id()] = it
-                    self._connect_icon_updates(layer)
-
-                elif isinstance(child, QgsLayerTreeGroup):
-                    if not has_visible_descendant(child):
-                        continue
-
-                    path = self._node_path(child)
-                    git = QTreeWidgetItem(parent_qt_item, [child.name()])
-                    git.setFlags(self._flags_for_item(ItemIsEnabled, is_group=True))
-                    if not self.auto_refresh_enabled:
-                        git.setCheckState(0, Qt.CheckState.Checked)
-                    git.setData(0, UserRole, ("group", path))
-                    self.group_items[path] = git
-
-                    add_children(git, child)
-
-        add_children(self.tree.invisibleRootItem(), root)
-
-        self.tree.expandAll()
-        self.tree.blockSignals(False)
-
-    def _on_item_clicked(self, item, column):
-        if not item:
+    def _on_project_loaded(self):
+        if not self.dock_is_open or self.tree_view is None:
             return
-        kind, val = item.data(0, UserRole) or (None, None)
-        if kind == "layer":
-            layer = QgsProject.instance().mapLayer(val)
-            if layer:
-                self.iface.setActiveLayer(layer)
+        lt_view = self.iface.layerTreeView()
+        new_model = lt_view.layerTreeModel()
+        if new_model is not self._src_model:
+            self._disconnect_model_signals()   # disconnects both always-on and auto-refresh
+            self._src_model = new_model
+            self.tree_view.setModel(self._src_model)
+            # Reconnect always-on handlers on the new model
+            for sig in (self._src_model.rowsInserted, self._src_model.rowsMoved):
+                sig.connect(self._on_structure_changed)
+            if self.auto_refresh_enabled:
+                self._connect_model_signals()
+        self._refresh_hidden()
 
-    def _on_item_double_clicked(self, item, column):
-        if self.auto_refresh_enabled:
-            return
-        if not item:
-            return
-        kind, val = item.data(0, UserRole) or (None, None)
-        if kind == "layer":
-            layer = QgsProject.instance().mapLayer(val)
-            if layer:
-                self.iface.showLayerProperties(layer)
+    def _schedule_refresh(self, delay_ms=60):
+        """Debounce rapid-fire changes before calling _refresh_hidden."""
+        if self._auto_timer is None:
+            self._auto_timer = QTimer(self.iface.mainWindow())
+            self._auto_timer.setSingleShot(True)
+            self._auto_timer.timeout.connect(self._refresh_hidden)
+        self._auto_timer.start(delay_ms)
 
-    def _on_item_changed(self, item, column):
-        if not item:
-            return
-        kind, val = item.data(0, UserRole) or (None, None)
-        if kind == "layer":
-            layer_id = val
-            node = QgsProject.instance().layerTreeRoot().findLayer(layer_id)
-            if node:
-                node.setItemVisibilityChecked(item.checkState(0) == Checked)
-        elif kind == "group":
-            root = QgsProject.instance().layerTreeRoot()
-            g = root
-            for name in val or ():
-                if not name:
-                    continue
-                nxt = next((gg for gg in g.findGroups() if gg.name() == name), None)
-                if nxt is None:
-                    g = None
-                    break
-                g = nxt
-            if g is not None:
-                vis = (item.checkState(0) == Checked)
-                try:
-                    g.setItemVisibilityCheckedRecursive(vis)
-                except Exception:
-                    g.setItemVisibilityChecked(vis)
+    # ── model signal connections (used for auto-refresh) ──────────────────
 
+    def _model_signals(self):
+        """Auto-refresh–only signals (rowsInserted/rowsMoved handled separately)."""
+        if self._src_model is None:
+            return []
+        return [
+            self._src_model.rowsRemoved,
+            self._src_model.layoutChanged,
+            self._src_model.modelReset,
+        ]
 
-    def _show_context_menu(self, pos: QPoint):
-        it = self.tree.itemAt(pos)
-        if not it:
-            return
-        kind, val = it.data(0, UserRole) or (None, None)
-
-        if kind == "layer":
-            layer = QgsProject.instance().mapLayer(val)
-            if not layer:
-                return
-            self.iface.setActiveLayer(layer)
-            lt_view = self.iface.layerTreeView()
-            if not lt_view:
-                return
-            lt_view.setCurrentLayer(layer)
-
-            provider = lt_view.menuProvider()
-            menu = provider.createContextMenu() if provider else None
-            if menu:
-                menu.exec_(self.tree.mapToGlobal(pos))
-            else:
-                menu = QMenu(self.tree)
-                if self.iface.actionZoomToLayer():
-                    menu.addAction(self.iface.actionZoomToLayer())
-                if self.iface.actionRenameLayer():
-                    menu.addAction(self.iface.actionRenameLayer())
-                menu.exec_(self.tree.mapToGlobal(pos))
-
-        elif kind == "group":
-            menu = QMenu(self.tree)
-            act_toggle = QAction("Toggle visibility", menu)
-            act_expand = QAction("Expand", menu)
-            act_collapse = QAction("Collapse", menu)
-
-            def _toggle_group():
-                state = it.checkState(0)
-                it.setCheckState(0, Unchecked if state == Checked else Checked)
-
-            act_toggle.triggered.connect(_toggle_group)
-            act_expand.triggered.connect(lambda: self.tree.expandItem(it))
-            act_collapse.triggered.connect(lambda: self.tree.collapseItem(it))
-            menu.addAction(act_toggle)
-            menu.addSeparator()
-            menu.addAction(act_expand)
-            menu.addAction(act_collapse)
-            menu.exec_(self.tree.mapToGlobal(pos))
-
-    def _on_tree_visibility_changed(self, node):
-        if node is None or not self.dock_is_open or self.tree is None:
-            return
-
-        def _set_check_safe(item, checked):
-            if not item:
-                return
-            self.tree.blockSignals(True)
+    def _connect_model_signals(self):
+        for sig in self._model_signals():
             try:
-                item.setCheckState(0, Checked if checked else Unchecked)
-            finally:
-                self.tree.blockSignals(False)
+                sig.disconnect(self._on_model_changed)
+            except Exception:
+                pass
+            sig.connect(self._on_model_changed)
 
-        if isinstance(node, QgsLayerTreeLayer):
-            it = self.layer_items.get(node.layerId())
-            _set_check_safe(it, node.isVisible())
-
-        elif isinstance(node, QgsLayerTreeGroup):
-            path = []
-            g = node
-            while g and g.parent() is not None:
-                path.append(g.name())
-                g = g.parent()
-            path = tuple(reversed(path))
-            it = self.group_items.get(path)
-            _set_check_safe(it, node.isVisible())
-
-    def auto_refresh_on_project_load(self):
-        if self.dock_is_open:
-            self.update_visible_tree()
-
-    def _connect_icon_updates(self, layer):
-        lid = layer.id()
-        if lid in self._icon_connections:
-            return
-        callbacks = []
-        if hasattr(layer, "styleChanged"):
-            cb = partial(self._refresh_item_icon, layer)
-            layer.styleChanged.connect(cb)
-            callbacks.append(("styleChanged", cb))
-        if hasattr(layer, "rendererChanged"):
-            cb = partial(self._refresh_item_icon, layer)
-            layer.rendererChanged.connect(cb)
-            callbacks.append(("rendererChanged", cb))
-        if hasattr(layer, "repaintRequested"):
-            cb = partial(self._refresh_item_icon, layer)
-            layer.repaintRequested.connect(cb)
-            callbacks.append(("repaintRequested", cb))
-        self._icon_connections[lid] = (layer, callbacks)
-
-    def _disconnect_icon_updates(self):
-        for lid, (layer, callbacks) in list(self._icon_connections.items()):
-            for sig_name, cb in callbacks:
+    def _disconnect_model_signals(self):
+        for sig in self._model_signals():
+            try:
+                sig.disconnect(self._on_model_changed)
+            except Exception:
+                pass
+        # Also disconnect the always-on structural handlers
+        if self._src_model is not None:
+            for sig in (self._src_model.rowsInserted, self._src_model.rowsMoved):
                 try:
-                    getattr(layer, sig_name).disconnect(cb)
+                    sig.disconnect(self._on_structure_changed)
                 except Exception:
                     pass
-        self._icon_connections.clear()
 
-    def _refresh_item_icon(self, layer):
-        item = self.layer_items.get(layer.id())
-        if not item:
-            return
-        icon = self._icon_for_layernode(layer.id())
-        if icon:
-            item.setIcon(0, icon)
+    # ── auto-refresh toggle ───────────────────────────────────────────────
 
     def _toggle_auto_refresh(self, checked):
         self.auto_refresh_enabled = bool(checked)
 
-        if self.act_toggle_auto:
-            if self.auto_refresh_enabled:
-                icon_on = QIcon(os.path.join(os.path.dirname(__file__), "icons", "mActionOn.svg"))
-                if icon_on.isNull():
-                    icon_on = QIcon.fromTheme("media-playback-start")
-                self.act_toggle_auto.setIcon(icon_on)
-                self.act_toggle_auto.setToolTip("Desactivate Auto-refresh")
-            else:
-                icon_off = QIcon(os.path.join(os.path.dirname(__file__), "icons", "mActionOff.svg"))
-                if icon_off.isNull():
-                    icon_off = QIcon.fromTheme("media-playback-stop")
-                self.act_toggle_auto.setIcon(icon_off)
-                self.act_toggle_auto.setToolTip("Activate Auto-refresh")
-
         if self.auto_refresh_enabled:
-            self._connect_project_signals_for_autorefresh()
+            icon_name, theme, tooltip = (
+                "mActionOn.svg", "media-playback-start", "Deactivate Auto-refresh")
+            self._connect_model_signals()
         else:
-            self._disconnect_project_signals_for_autorefresh()
+            icon_name, theme, tooltip = (
+                "mActionOff.svg", "media-playback-stop", "Activate Auto-refresh")
+            self._disconnect_model_signals()
 
-        self.update_visible_tree()
+        icon = QIcon(os.path.join(os.path.dirname(__file__), "icons", icon_name))
+        if icon.isNull():
+            icon = QIcon.fromTheme(theme)
+        self.act_toggle_auto.setIcon(icon)
+        self.act_toggle_auto.setToolTip(tooltip)
 
+        self._refresh_hidden()
 
-    def _connect_project_signals_for_autorefresh(self):
-        root = QgsProject.instance().layerTreeRoot()
-        try: root.visibilityChanged.disconnect(self._on_tree_visibility_changed_autorefresh)
-        except Exception: pass
-        root.visibilityChanged.connect(self._on_tree_visibility_changed_autorefresh)
+    # ── interaction handlers ──────────────────────────────────────────────
 
-        try: QgsProject.instance().layerWasAdded.disconnect(self._on_any_change_autorefresh)
-        except Exception: pass
-        QgsProject.instance().layerWasAdded.connect(self._on_any_change_autorefresh)
+    def _on_clicked(self, idx):
+        node = self._node_at(idx)
+        if isinstance(node, QgsLayerTreeLayer):
+            layer = node.layer()
+            if layer:
+                self.iface.setActiveLayer(layer)
 
-        try: QgsProject.instance().layerWillBeRemoved.disconnect(self._on_any_change_autorefresh)
-        except Exception: pass
-        QgsProject.instance().layerWillBeRemoved.connect(self._on_any_change_autorefresh)
+    def _on_double_clicked(self, idx):
+        node = self._node_at(idx)
+        if isinstance(node, QgsLayerTreeLayer):
+            layer = node.layer()
+            if layer:
+                self.iface.showLayerProperties(layer)
 
+    def _show_context_menu(self, pos: QPoint):
+        if self.tree_view is None:
+            return
+        idx = self.tree_view.indexAt(pos)
+        if not idx.isValid():
+            return
+        node = self._node_at(idx)
         lt_view = self.iface.layerTreeView()
-        self._lt_model = lt_view.layerTreeModel() if lt_view else None
 
-        if self._lt_model:
-            try: self._lt_model.rowsMoved.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.rowsInserted.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.rowsRemoved.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.layoutChanged.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.modelReset.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
+        if isinstance(node, QgsLayerTreeLayer):
+            layer = node.layer()
+            if not layer:
+                return
+            self.iface.setActiveLayer(layer)
+            if lt_view:
+                # Sync lt_view's selection so menuProvider knows which layer
+                lt_view.setCurrentIndex(idx)
+                try:
+                    lt_view.setCurrentLayer(layer)
+                except Exception:
+                    pass
+                provider = lt_view.menuProvider()
+                if provider:
+                    menu = provider.createContextMenu()
+                    if menu:
+                        menu.exec(self.tree_view.mapToGlobal(pos))
+                        return
+            # Fallback minimal menu
+            menu = QMenu(self.tree_view)
+            for act in (self.iface.actionZoomToLayer(),
+                        self.iface.actionRenameLayer()):
+                if act:
+                    menu.addAction(act)
+            menu.exec(self.tree_view.mapToGlobal(pos))
 
-            self._lt_model.rowsMoved.connect(self._on_model_changed_autorefresh)
-            self._lt_model.rowsInserted.connect(self._on_model_changed_autorefresh)
-            self._lt_model.rowsRemoved.connect(self._on_model_changed_autorefresh)
-            self._lt_model.layoutChanged.connect(self._on_model_changed_autorefresh)
-            self._lt_model.modelReset.connect(self._on_model_changed_autorefresh)
-
-    def _on_model_changed_autorefresh(self, *args, **kwargs):
-        self._schedule_autorefresh(60)
-
-    def _disconnect_project_signals_for_autorefresh(self):
-        root = QgsProject.instance().layerTreeRoot()
-        try: root.visibilityChanged.disconnect(self._on_tree_visibility_changed_autorefresh)
-        except Exception: pass
-        try: QgsProject.instance().layerWasAdded.disconnect(self._on_any_change_autorefresh)
-        except Exception: pass
-        try: QgsProject.instance().layerWillBeRemoved.disconnect(self._on_any_change_autorefresh)
-        except Exception: pass
-
-        if hasattr(self, "_lt_model") and self._lt_model:
-            try: self._lt_model.rowsMoved.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.rowsInserted.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.rowsRemoved.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.layoutChanged.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-            try: self._lt_model.modelReset.disconnect(self._on_model_changed_autorefresh)
-            except Exception: pass
-        self._lt_model = None
-
-        if self._auto_timer and self._auto_timer.isActive():
-            self._auto_timer.stop()
-
-
-    def _on_tree_visibility_changed_autorefresh(self, node):
-        if not self.dock_is_open or self.tree is None or not self.auto_refresh_enabled:
-            return
-        self.update_visible_tree()
-
-
-    def _on_any_change_autorefresh(self, *_args, **_kwargs):
-        if not self.dock_is_open or self.tree is None or not self.auto_refresh_enabled:
-            return
-        self.update_visible_tree()
-
-    def _flags_for_item(self, base_flags, is_group=False):
-        try:
-            # PyQt6 (QGIS 4)
-            flags = base_flags | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
-            if not self.auto_refresh_enabled:
-                flags |= Qt.ItemFlag.ItemIsUserCheckable
-        except AttributeError:
-            # PyQt5 (QGIS 3)
-            flags = base_flags | Qt.ItemIsSelectable | Qt.ItemIsEnabled
-            if not self.auto_refresh_enabled:
-                flags |= Qt.ItemIsUserCheckable
-        return flags
-
-    def _schedule_autorefresh(self, delay_ms=60):
-        if not self.auto_refresh_enabled or not self.dock_is_open or self.tree is None:
-            return
-        if self._auto_timer is None:
-            self._auto_timer = QTimer(self.iface.mainWindow())
-            self._auto_timer.setSingleShot(True)
-            self._auto_timer.timeout.connect(self.update_visible_tree)
-        self._auto_timer.start(delay_ms)
+        elif isinstance(node, QgsLayerTreeGroup):
+            if lt_view:
+                lt_view.setCurrentIndex(idx)
+                provider = lt_view.menuProvider()
+                if provider:
+                    menu = provider.createContextMenu()
+                    if menu:
+                        menu.exec(self.tree_view.mapToGlobal(pos))
+                        return
+            menu = QMenu(self.tree_view)
+            act_expand = QAction("Expand all", menu)
+            act_expand.triggered.connect(self.tree_view.expandAll)
+            act_collapse = QAction("Collapse all", menu)
+            act_collapse.triggered.connect(self.tree_view.collapseAll)
+            menu.addAction(act_expand)
+            menu.addAction(act_collapse)
+            menu.exec(self.tree_view.mapToGlobal(pos))
