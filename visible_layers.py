@@ -48,6 +48,7 @@ class VisibleLayers:
         self.act_toggle_auto = None
         self._auto_timer = None
         self._action_added_to_menu = False
+        self._first_show = True     # expand all only on the very first open
 
     # ── helpers ────────────────────────────────────────────────────────────
 
@@ -66,8 +67,8 @@ class VisibleLayers:
             if isinstance(child, QgsLayerTreeLayer):
                 if child.isVisible():
                     layer = child.layer()
-                    if layer and not (isinstance(layer, QgsVectorLayer)
-                                     and not layer.isSpatial()):
+                    nonspatial = isinstance(layer, QgsVectorLayer) and not layer.isSpatial()
+                    if layer and not nonspatial:
                         return True
             elif isinstance(child, QgsLayerTreeGroup):
                 if child.isVisible() and self._group_has_visible_content(child):
@@ -106,11 +107,13 @@ class VisibleLayers:
                 self._hide_rows(idx)  # Only recurse into visible rows
 
     def _refresh_hidden(self):
-        """Re-apply the visibility filter and expand all visible nodes."""
+        """Re-apply the visibility filter.  Does NOT touch expand state so that
+        drag-and-drop and auto-refresh do not collapse/expand nodes the user
+        has deliberately arranged.  expandAll() is called only on first open
+        and after a project load (see toggle_dock / _on_project_loaded)."""
         if self.tree_view is None or self._src_model is None:
             return
         self._hide_rows(QModelIndex())
-        self.tree_view.expandAll()
 
     def _set_action_icon(self, filename, theme_fallback):
         icon_path = os.path.join(os.path.dirname(__file__), "icons", filename)
@@ -136,17 +139,17 @@ class VisibleLayers:
 
         root = QgsProject.instance().layerTreeRoot()
         root.visibilityChanged.connect(self._on_visibility_changed)
-        QgsProject.instance().layerWasAdded.connect(self._on_any_change)
+        QgsProject.instance().layerWasAdded.connect(self._on_layer_added)
         QgsProject.instance().layerWillBeRemoved.connect(self._on_any_change)
         QgsProject.instance().readProject.connect(self._on_project_loaded)
 
     def unload(self):
         root = QgsProject.instance().layerTreeRoot()
         for sig, slot in [
-            (root.visibilityChanged,                       self._on_visibility_changed),
-            (QgsProject.instance().layerWasAdded,         self._on_any_change),
-            (QgsProject.instance().layerWillBeRemoved,    self._on_any_change),
-            (QgsProject.instance().readProject,           self._on_project_loaded),
+            (root.visibilityChanged, self._on_visibility_changed),
+            (QgsProject.instance().layerWasAdded, self._on_layer_added),
+            (QgsProject.instance().layerWillBeRemoved, self._on_any_change),
+            (QgsProject.instance().readProject, self._on_project_loaded),
         ]:
             try:
                 sig.disconnect(slot)
@@ -275,6 +278,9 @@ class VisibleLayers:
             self.dock_is_open = False
         else:
             self._refresh_hidden()
+            if self._first_show:
+                self.tree_view.expandAll()
+                self._first_show = False
             self.dock.show()
             self._set_action_icon("glasses_off.svg", "view-hidden")
             self.dock_is_open = True
@@ -341,11 +347,6 @@ class VisibleLayers:
         self.iface.addDockWidget(DockWidgetArea.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self._update_dock_state)
 
-        # Always-on: re-apply filter after any structural change (insert or move),
-        # regardless of auto-refresh mode.
-        for sig in (self._src_model.rowsInserted, self._src_model.rowsMoved):
-            sig.connect(self._on_structure_changed)
-
         if self.auto_refresh_enabled:
             self._connect_model_signals()
 
@@ -360,6 +361,17 @@ class VisibleLayers:
         if self.dock_is_open and self.auto_refresh_enabled:
             self._schedule_refresh()
 
+    def _on_layer_added(self, *_):
+        """Always-on: refresh when a new layer is added to the project.
+
+        Intentionally ignores auto_refresh_enabled — a newly added layer
+        should appear in the panel immediately regardless of mode.
+        Uses a 100 ms debounce to let QGIS finish adding the layer fully.
+        """
+        if not self.dock_is_open:
+            return
+        self._schedule_refresh(delay_ms=100)
+
     def _on_any_change(self, *_):
         if self.dock_is_open and self.auto_refresh_enabled:
             self._schedule_refresh()
@@ -367,22 +379,6 @@ class VisibleLayers:
     def _on_model_changed(self, *_):
         if self.dock_is_open and self.auto_refresh_enabled:
             self._schedule_refresh()
-
-    def _on_structure_changed(self, *_):
-        """Always-on: re-apply the visibility filter after any structural change.
-
-        Connected to rowsInserted and rowsMoved regardless of auto-refresh mode.
-        - rowsInserted: Qt shows new rows by default (not hidden); we must
-          evaluate them immediately even in manual mode.
-        - rowsMoved: drag-and-drop in the VL panel moves rows in the shared
-          model (propagating to the Layers panel); the filter must be
-          re-applied so that groups which become empty are hidden.
-        A 100 ms debounce covers atomic QGIS operations such as "Group
-        Selected" (group inserted then layers moved in).
-        """
-        if not self.dock_is_open or self.tree_view is None:
-            return
-        self._schedule_refresh(delay_ms=100)
 
     def _on_project_loaded(self):
         if not self.dock_is_open or self.tree_view is None:
@@ -393,12 +389,11 @@ class VisibleLayers:
             self._disconnect_model_signals()   # disconnects both always-on and auto-refresh
             self._src_model = new_model
             self.tree_view.setModel(self._src_model)
-            # Reconnect always-on handlers on the new model
-            for sig in (self._src_model.rowsInserted, self._src_model.rowsMoved):
-                sig.connect(self._on_structure_changed)
             if self.auto_refresh_enabled:
                 self._connect_model_signals()
         self._refresh_hidden()
+        self.tree_view.expandAll()  # fresh project = expand everything once
+        self._first_show = False
 
     def _schedule_refresh(self, delay_ms=60):
         """Debounce rapid-fire changes before calling _refresh_hidden."""
@@ -411,7 +406,7 @@ class VisibleLayers:
     # ── model signal connections (used for auto-refresh) ──────────────────
 
     def _model_signals(self):
-        """Auto-refresh–only signals (rowsInserted/rowsMoved handled separately)."""
+        """Signals used only in auto-refresh mode."""
         if self._src_model is None:
             return []
         return [
@@ -434,13 +429,6 @@ class VisibleLayers:
                 sig.disconnect(self._on_model_changed)
             except Exception:
                 pass
-        # Also disconnect the always-on structural handlers
-        if self._src_model is not None:
-            for sig in (self._src_model.rowsInserted, self._src_model.rowsMoved):
-                try:
-                    sig.disconnect(self._on_structure_changed)
-                except Exception:
-                    pass
 
     # ── auto-refresh toggle ───────────────────────────────────────────────
 
