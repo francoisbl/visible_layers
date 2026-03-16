@@ -95,7 +95,16 @@ class VisibleLayers:
         return False
 
     def _hide_rows(self, parent):
-        """Recursively hide/show rows to match current layer visibility."""
+        """Recursively hide/show group and layer rows.
+
+        Intentionally does NOT recurse into QgsLayerTreeLayer nodes.
+        Accessing rowCount() on a layer index triggers QgsLayerTreeModel's
+        lazy legend-node loading, which emits rowsInserted and causes Qt to
+        auto-expand the parent node in the view — the root cause of the
+        unwanted full-list expansion on every refresh.
+        Legend nodes are always shown when their parent layer is visible;
+        their expand/collapse state is left entirely to the user.
+        """
         if self.tree_view is None or self._src_model is None:
             return
         for row in range(self._src_model.rowCount(parent)):
@@ -103,8 +112,8 @@ class VisibleLayers:
             node = self._node_at(idx)
             hide = self._should_hide(node)
             self.tree_view.setRowHidden(row, parent, hide)
-            if not hide:
-                self._hide_rows(idx)  # Only recurse into visible rows
+            if not hide and isinstance(node, QgsLayerTreeGroup):
+                self._hide_rows(idx)  # Recurse into groups only
 
     def _refresh_hidden(self):
         """Re-apply the visibility filter.  Does NOT touch expand state so that
