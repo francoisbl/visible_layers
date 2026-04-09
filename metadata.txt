@@ -18,16 +18,10 @@ changelog= 1.3.2 - Layers collapsed by default ; added Expand All / Collapse All
   1.3 - Added drag-and-drop reordering ; QGIS 4 compatibility ; enhanced group support.
   1.2.2 - Fixed icon not appearing in the Layers Panel dropdown menu when collapsed (github issue opened by colemanjj)
   1.2.1 - Fixed issues related to Qt6/QGIS4 compatibility, while maintaining full support for QGIS 3.
-  1.2 - New Auto-Refresh Mode (suggestion from github.com/TurboGraphxBeige):
-        * OFF: The Visible Layers panel updates only when manually refreshed; layers and groups can be toggled individually.
-        * ON: The panel syncs in real-time with the main Layers panel, including visibility, order, and structure; the list becomes read-only.
-    - Full support for groups:
-        * Groups now appear in the Visible Layers panel with the same hierarchy and order as in the main Layers panel.
-        * Group visibility can be toggled (manual mode), and layers respect group visibility states.
-  1.1 - Added contextual menu on right-click (suggestion from u/ReddmitPy)
-  - Added style overview square (which updates automatically)
+  1.2 - Added Auto-Refresh mode (suggested by TurboGraphxBeige) and full group support
+  1.1 - Added contextual menu on right-click (suggestion from u/ReddmitPy) ; added style overview square
   1.0.4 - Qt6/QGIS4 compatibility, reorganized imports(qgis.PyQt)
   1.0.3 - Removed duplicate toolbar button to simplify the interface
   1.0.2 - Excluded non-spatial attribute tables from the panel
   1.0.1 - Fixed error when toggling grouped layers
-  1.0.0 - Initial release with panel, toggle sync, and refresh features
+  1.0 - Initial release with panel, toggle sync, and refresh features
