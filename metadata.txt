@@ -24,4 +24,4 @@ changelog= 1.3.2 - Layers collapsed by default ; added Expand All / Collapse All
   1.0.3 - Removed duplicate toolbar button to simplify the interface
   1.0.2 - Excluded non-spatial attribute tables from the panel
   1.0.1 - Fixed error when toggling grouped layers
-  1.0 - Initial release with panel, toggle sync, and refresh features
+  1.0.0 - Initial release with panel, toggle sync, and refresh features
