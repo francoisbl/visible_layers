@@ -48,7 +48,6 @@ class VisibleLayers:
         self.act_toggle_auto = None
         self._auto_timer = None
         self._action_added_to_menu = False
-        self._first_show = True     # expand all only on the very first open
 
     # ── helpers ────────────────────────────────────────────────────────────
 
@@ -287,9 +286,6 @@ class VisibleLayers:
             self.dock_is_open = False
         else:
             self._refresh_hidden()
-            if self._first_show:
-                self.tree_view.expandAll()
-                self._first_show = False
             self.dock.show()
             self._set_action_icon("glasses_off.svg", "view-hidden")
             self.dock_is_open = True
@@ -340,6 +336,20 @@ class VisibleLayers:
         self.act_toggle_auto.setChecked(False)
         self.act_toggle_auto.triggered.connect(self._toggle_auto_refresh)
         toolbar.addAction(self.act_toggle_auto)
+
+        expand_action = QAction(
+            QIcon(":/images/themes/default/mActionExpandTree.svg"),
+            "Expand All", self.iface.mainWindow(),
+        )
+        expand_action.triggered.connect(self.tree_view.expandAll)
+        toolbar.addAction(expand_action)
+
+        collapse_action = QAction(
+            QIcon(":/images/themes/default/mActionCollapseTree.svg"),
+            "Collapse All", self.iface.mainWindow(),
+        )
+        collapse_action.triggered.connect(self.tree_view.collapseAll)
+        toolbar.addAction(collapse_action)
 
         # ── Layout ────────────────────────────────────────────────────────
         main_widget = QWidget()
@@ -401,8 +411,6 @@ class VisibleLayers:
             if self.auto_refresh_enabled:
                 self._connect_model_signals()
         self._refresh_hidden()
-        self.tree_view.expandAll()  # fresh project = expand everything once
-        self._first_show = False
 
     def _schedule_refresh(self, delay_ms=60):
         """Debounce rapid-fire changes before calling _refresh_hidden."""
