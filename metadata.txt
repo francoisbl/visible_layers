@@ -3,7 +3,7 @@ name=Visible Layers
 icon=icon.png
 description=Quickly filter and display only the visible layers in your project.
 about=This plugin adds a toggleable panel to display only the currently visible layers, offering easier access and layer navigation. Access it directly from the Layers panel.
-version=1.3.1
+version=1.3.2
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99.0
 supportsQt6=True
@@ -13,7 +13,8 @@ homepage=https://github.com/francoisbl/visible_layers
 tracker=https://github.com/francoisbl/visible_layers/issues
 repository=https://github.com/francoisbl/visible_layers
 tags=layers, visibility, dock, interface, toggle, navigation, productivity
-changelog= 1.3.1 - Code quality improvements (plugins.qgis.org checker).
+changelog= 1.3.2 - Layers collapsed by default ; added Expand All / Collapse All buttons.
+  1.3.1 - Code quality improvements (plugins.qgis.org checker).
   1.3 - Added drag-and-drop reordering ; QGIS 4 compatibility ; enhanced group support.
   1.2.2 - Fixed icon not appearing in the Layers Panel dropdown menu when collapsed (github issue opened by colemanjj)
   1.2.1 - Fixed issues related to Qt6/QGIS4 compatibility, while maintaining full support for QGIS 3.
