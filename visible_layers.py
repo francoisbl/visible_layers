@@ -21,8 +21,8 @@ try:
     DragDrop = QAbstractItemView.DragDropMode.DragDrop
     MoveAction = Qt.DropAction.MoveAction
 except AttributeError:
-    DragDrop = QAbstractItemView.DragDrop
-    MoveAction = Qt.MoveAction
+    DragDrop = getattr(QAbstractItemView, "DragDrop")
+    MoveAction = getattr(Qt, "MoveAction")
 
 
 class VisibleLayers:
@@ -134,7 +134,8 @@ class VisibleLayers:
             self.button.setIcon(icon)
 
     def _log_ignored_exception(self, context, exception):
-        level = getattr(getattr(Qgis, "MessageLevel", Qgis), "Info", Qgis.Info)
+        message_level = getattr(Qgis, "MessageLevel", None)
+        level = getattr(message_level, "Info") if message_level else getattr(Qgis, "Info")
         QgsMessageLog.logMessage(
             f"{context}: {exception}",
             "Visible Layers",
