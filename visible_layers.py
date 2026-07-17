@@ -132,6 +132,23 @@ class VisibleLayers:
         if self.button:
             self.button.setIcon(icon)
 
+    def _sync_current_layer(self, idx, layer):
+        """Make a Visible Layers click behave like a native Layers panel click."""
+        if not layer:
+            return
+        self.iface.setActiveLayer(layer)
+        lt_view = self.iface.layerTreeView()
+        if not lt_view:
+            return
+        try:
+            lt_view.setCurrentIndex(idx)
+        except Exception:
+            pass
+        try:
+            lt_view.setCurrentLayer(layer)
+        except Exception:
+            pass
+
     # ── initGui / unload ──────────────────────────────────────────────────
 
     def initGui(self):
@@ -474,9 +491,7 @@ class VisibleLayers:
     def _on_clicked(self, idx):
         node = self._node_at(idx)
         if isinstance(node, QgsLayerTreeLayer):
-            layer = node.layer()
-            if layer:
-                self.iface.setActiveLayer(layer)
+            self._sync_current_layer(idx, node.layer())
 
     def _on_double_clicked(self, idx):
         node = self._node_at(idx)
@@ -498,14 +513,8 @@ class VisibleLayers:
             layer = node.layer()
             if not layer:
                 return
-            self.iface.setActiveLayer(layer)
+            self._sync_current_layer(idx, layer)
             if lt_view:
-                # Sync lt_view's selection so menuProvider knows which layer
-                lt_view.setCurrentIndex(idx)
-                try:
-                    lt_view.setCurrentLayer(layer)
-                except Exception:
-                    pass
                 provider = lt_view.menuProvider()
                 if provider:
                     menu = provider.createContextMenu()
