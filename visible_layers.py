@@ -5,7 +5,8 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QSize, QPoint, QTimer, QModelIndex
 from qgis.core import (
-    QgsLayerTreeLayer, QgsLayerTreeGroup, QgsProject, QgsVectorLayer,
+    Qgis, QgsLayerTreeLayer, QgsLayerTreeGroup, QgsMessageLog, QgsProject,
+    QgsVectorLayer,
 )
 import os
 
@@ -57,7 +58,7 @@ class VisibleLayers:
             return None
         try:
             return self._src_model.index2node(idx)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return None
 
     def _group_has_visible_content(self, group_node):
@@ -132,6 +133,14 @@ class VisibleLayers:
         if self.button:
             self.button.setIcon(icon)
 
+    def _log_ignored_exception(self, context, exception):
+        level = getattr(getattr(Qgis, "MessageLevel", Qgis), "Info", Qgis.Info)
+        QgsMessageLog.logMessage(
+            f"{context}: {exception}",
+            "Visible Layers",
+            level,
+        )
+
     def _sync_current_layer(self, idx, layer):
         """Make a Visible Layers click behave like a native Layers panel click."""
         if not layer:
@@ -142,12 +151,12 @@ class VisibleLayers:
             return
         try:
             lt_view.setCurrentIndex(idx)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            self._log_ignored_exception("Could not sync current layer index", exc)
         try:
             lt_view.setCurrentLayer(layer)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            self._log_ignored_exception("Could not sync current layer", exc)
 
     # ── initGui / unload ──────────────────────────────────────────────────
 
@@ -178,8 +187,8 @@ class VisibleLayers:
         ]:
             try:
                 sig.disconnect(slot)
-            except Exception:
-                pass
+            except (RuntimeError, TypeError) as exc:
+                self._log_ignored_exception("Could not disconnect signal", exc)
 
         self._disconnect_model_signals()
 
@@ -289,8 +298,8 @@ class VisibleLayers:
                 menu.addAction(self.action)
                 self._action_added_to_menu = True
 
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            self._log_ignored_exception("Could not add action to dock menu", exc)
 
     # ── dock creation / toggle ─────────────────────────────────────────────
 
@@ -453,16 +462,16 @@ class VisibleLayers:
         for sig in self._model_signals():
             try:
                 sig.disconnect(self._on_model_changed)
-            except Exception:
-                pass
+            except (RuntimeError, TypeError) as exc:
+                self._log_ignored_exception("Could not disconnect signal", exc)
             sig.connect(self._on_model_changed)
 
     def _disconnect_model_signals(self):
         for sig in self._model_signals():
             try:
                 sig.disconnect(self._on_model_changed)
-            except Exception:
-                pass
+            except (RuntimeError, TypeError) as exc:
+                self._log_ignored_exception("Could not disconnect signal", exc)
 
     # ── auto-refresh toggle ───────────────────────────────────────────────
 
