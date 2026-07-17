@@ -1,9 +1,9 @@
 from qgis.PyQt.QtWidgets import (
-    QAction, QAbstractItemView, QDockWidget, QTreeView,
+    QAction, QAbstractItemView, QDockWidget, QStyle, QTreeView,
     QVBoxLayout, QWidget, QToolButton, QToolBar, QMenu,
 )
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import Qt, QSize, QPoint, QTimer, QModelIndex
+from qgis.PyQt.QtCore import Qt, QSize, QPoint, QTimer, QModelIndex, QItemSelectionModel
 from qgis.core import (
     Qgis, QgsLayerTreeLayer, QgsLayerTreeGroup, QgsMessageLog, QgsProject,
     QgsVectorLayer,
@@ -23,6 +23,44 @@ try:
 except AttributeError:
     DragDrop = getattr(QAbstractItemView, "DragDrop")
     MoveAction = getattr(Qt, "MoveAction")
+
+try:
+    NoFocus = Qt.FocusPolicy.NoFocus
+except AttributeError:
+    NoFocus = getattr(Qt, "NoFocus")
+
+SelectionFlag = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
+ClearAndSelect = getattr(SelectionFlag, "ClearAndSelect")
+Rows = getattr(SelectionFlag, "Rows")
+
+StyleState = getattr(QStyle, "StateFlag", QStyle)
+StateActive = getattr(StyleState, "State_Active")
+
+
+class _AlwaysActiveTreeView(QTreeView):
+    """A QTreeView that always paints rows as if it had keyboard focus.
+
+    This view deliberately never holds real keyboard focus (NoFocus policy,
+    see _create_dock) — real focus has to stay on the native Layers panel
+    for QGIS actions like copy/paste to work when the layer was activated
+    from here. But Qt/macOS ties the selected row's colour to actual focus
+    ("active" saturated blue vs. muted "inactive" grey, including native
+    checkbox/branch decoration), so without this override the row would
+    always render as unfocused/grey. Forcing State_Active here — where the
+    view builds the style option for every part of a row, branch strip
+    included — keeps the look identical to a genuinely focused native
+    panel. viewOptions() is the Qt5 hook, initViewItemOption() the Qt6
+    replacement; both are defined so either binding picks up the right one.
+    """
+
+    def viewOptions(self):
+        option = super().viewOptions()
+        option.state |= StateActive
+        return option
+
+    def initViewItemOption(self, option):
+        super().initViewItemOption(option)
+        option.state |= StateActive
 
 
 class VisibleLayers:
@@ -142,22 +180,54 @@ class VisibleLayers:
             level,
         )
 
-    def _sync_current_layer(self, idx, layer):
+    def _sync_current_layer(self, layer):
         """Make a Visible Layers click behave like a native Layers panel click."""
         if not layer:
             return
+        # Qt's default click handling already updated this view's own
+        # current/selected index (see _create_dock for why the two views
+        # can't just share one selection model).
         self.iface.setActiveLayer(layer)
+
+        # Move real keyboard focus to the native layer tree view. Confirmed
+        # necessary: QGIS's copy/paste-features workflow does not work
+        # reliably off activeLayer() alone — it also depends on the native
+        # panel actually holding focus. tree_view has NoFocus policy (see
+        # _create_dock), so there's no race with Qt handing focus back to
+        # it — this can run synchronously, no flicker.
         lt_view = self.iface.layerTreeView()
-        if not lt_view:
+        if lt_view:
+            try:
+                lt_view.setFocus()
+            except (AttributeError, RuntimeError, TypeError) as exc:
+                self._log_ignored_exception("Could not focus layer tree view", exc)
+
+    def _on_native_layer_changed(self, layer):
+        """Mirror a native Layers panel selection change into this panel.
+
+        Without this, clicking a different layer natively left this panel's
+        own (independent) selection pointing at whatever was last clicked
+        here, which reads as if that stale layer were still active.
+        """
+        if self.tree_view is None or self._src_model is None:
             return
         try:
-            lt_view.setCurrentIndex(idx)
+            if not layer:
+                self.tree_view.clearSelection()
+                self.tree_view.setCurrentIndex(QModelIndex())
+                return
+            node = self._src_model.rootGroup().findLayer(layer.id())
+            if node is None:
+                return
+            idx = self._src_model.node2index(node)
+            if not idx.isValid():
+                return
+            self.tree_view.setCurrentIndex(idx)
+            selection_model = self.tree_view.selectionModel()
+            if selection_model:
+                selection_model.select(idx, ClearAndSelect | Rows)
         except (AttributeError, RuntimeError, TypeError) as exc:
-            self._log_ignored_exception("Could not sync current layer index", exc)
-        try:
-            lt_view.setCurrentLayer(layer)
-        except (AttributeError, RuntimeError, TypeError) as exc:
-            self._log_ignored_exception("Could not sync current layer", exc)
+            self._log_ignored_exception("Could not mirror native layer selection", exc)
 
     # ── initGui / unload ──────────────────────────────────────────────────
 
@@ -190,6 +260,14 @@ class VisibleLayers:
                 sig.disconnect(slot)
             except (RuntimeError, TypeError) as exc:
                 self._log_ignored_exception("Could not disconnect signal", exc)
+
+        if self.tree_view is not None:
+            lt_view = self.iface.layerTreeView()
+            if lt_view:
+                try:
+                    lt_view.currentLayerChanged.disconnect(self._on_native_layer_changed)
+                except (RuntimeError, TypeError) as exc:
+                    self._log_ignored_exception("Could not disconnect signal", exc)
 
         self._disconnect_model_signals()
 
@@ -323,8 +401,28 @@ class VisibleLayers:
         self._src_model = lt_view.layerTreeModel()
 
         # ── QTreeView backed by the shared model ──────────────────────────
-        self.tree_view = QTreeView()
+        self.tree_view = _AlwaysActiveTreeView()
         self.tree_view.setModel(self._src_model)
+
+        # Never let this view take real keyboard focus — it's always kept
+        # on the native Layers panel (see _sync_current_layer) so QGIS
+        # actions like copy/paste work. Selection/checkbox clicks work
+        # fine without focus.
+        self.tree_view.setFocusPolicy(NoFocus)
+
+        # Note: an earlier attempt just reused lt_view.selectionModel() here,
+        # assuming a shared selection model would keep both views in sync
+        # for free. In practice nothing got synced — most likely because
+        # lt_view's own view-level model (lt_view.model(), used for its
+        # search/filter box) is a proxy over this layerTreeModel(), so its
+        # selection model is bound to proxy indexes rather than the raw
+        # model indexes tree_view uses; Qt silently ignores a selection
+        # model that targets a different model. Sync explicitly instead,
+        # in both directions:
+        # Visible Layers click -> native panel: _sync_current_layer()
+        # Native panel click -> Visible Layers: _on_native_layer_changed()
+        lt_view.currentLayerChanged.connect(self._on_native_layer_changed)
+
         self.tree_view.header().setVisible(False)
         self.tree_view.setIndentation(14)
         self.tree_view.setContextMenuPolicy(ContextMenuPolicy.CustomContextMenu)
@@ -501,7 +599,7 @@ class VisibleLayers:
     def _on_clicked(self, idx):
         node = self._node_at(idx)
         if isinstance(node, QgsLayerTreeLayer):
-            self._sync_current_layer(idx, node.layer())
+            self._sync_current_layer(node.layer())
 
     def _on_double_clicked(self, idx):
         node = self._node_at(idx)
@@ -523,7 +621,7 @@ class VisibleLayers:
             layer = node.layer()
             if not layer:
                 return
-            self._sync_current_layer(idx, layer)
+            self._sync_current_layer(layer)
             if lt_view:
                 provider = lt_view.menuProvider()
                 if provider:
